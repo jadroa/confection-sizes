@@ -72,7 +72,30 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintDimensionRatio="W,640:480"/>
 
-    <!-- Camera control buttons -->
+    <TextView
+        android:id="@+id/instructions"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        android:layout_marginEnd="16dp"
+        android:textColor="#00ff00"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:text="to measure touch circle button"/>
+
+    <TextView
+        android:id="@+id/countdown_timer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:textColor="#00ff00"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:text="10"
+        app:layout_constraintStart_toStartOf="@id/instructions"
+        app:layout_constraintEnd_toEndOf="@id/instructions"
+        app:layout_constraintTop_toBottomOf="@id/instructions"/>
 
     <ImageButton
         android:id="@+id/camera_capture_button"
@@ -133,5 +156,32 @@
         android:textColor="#FFFFFF"
         android:textStyle="bold"
         tools:text="108 cm"/>
+
+    <TextView
+        android:id="@+id/label_height"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginBottom="8dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        android:textColor="#ffffff"
+        android:textSize="18dp"
+        android:text="enter your real height in cm: "/>
+
+    <EditText
+        android:id="@+id/edit_height"
+        android:layout_width="50dp"
+        android:layout_height="wrap_content"
+        android:background="#ffffff"
+        android:gravity="center"
+        android:inputType="number"
+        android:textColor="#000000"
+        app:layout_constraintStart_toEndOf="@id/label_height"
+        app:layout_constraintTop_toTopOf="@id/label_height"
+        app:layout_constraintBottom_toBottomOf="@id/label_height"
+        android:text="179"/>
+
+
 
 </androidx.constraintlayout.widget.ConstraintLayout>

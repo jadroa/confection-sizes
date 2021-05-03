@@ -22,11 +22,13 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.*
 import android.os.Bundle
+import android.os.CountDownTimer
 import android.os.Handler
 import android.util.Log
 import android.util.Size
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.AspectRatio
 import androidx.camera.core.CameraSelector
@@ -173,51 +175,77 @@ class CameraActivity : AppCompatActivity() {
 //            // Re-enable camera controls
 //            it.isEnabled = true
 
-            drawOverlayView.measureDirection = MeasureDirection.FRONT
-            Handler().postDelayed({
-                maskImageLiveData.value?.let { segmentData ->
-                    drawOverlayView.drawOverlay(segmentData, MeasureDirection.FRONT, MeasuredBodyPart.SHOULDER)?.let { measureShoulderBitmap ->
-                        measure(measureShoulderBitmap, MeasuredBodyPart.SHOULDER, MeasureDirection.FRONT)
-                        lastMeasuredLeftShoulderY = segmentData.shoulderLine?.second?.y
+            if (!edit_height.text.isEmpty()) {
+                countdown_timer.text = "10"
+                instructions.text = "lets start with front"
+                drawOverlayView.measureDirection = MeasureDirection.FRONT
+                object : CountDownTimer(10000, 1000) {
+                    override fun onTick(millisUntilFinished: Long) {
+                        countdown_timer.text = countdown_timer.text.toString().toInt().dec().toString()
                     }
-                }
-                maskImageLiveData.value?.let { segmentData ->
-                    drawOverlayView.drawOverlay(segmentData, MeasureDirection.FRONT, MeasuredBodyPart.HIP)?.let { measureHipBitmap ->
-                        measure(measureHipBitmap, MeasuredBodyPart.HIP, MeasureDirection.FRONT)
-                        lastMeasuredLeftHipY = segmentData.hipLine?.second?.y
-                    }
-                }
-                drawOverlayView.measureDirection = MeasureDirection.SIDE
-            }, 10000)
 
-            Handler().postDelayed({
-                maskImageLiveData.value?.let { segmentData ->
-                    val segmentDataNew = segmentData.copy(
-                            shoulderLine = Pair(
-                                    PointF(segmentData.shoulderLine?.first?.x!!, lastMeasuredLeftShoulderY!!),
-                                    PointF(segmentData.shoulderLine.second.x, lastMeasuredLeftShoulderY!!))
-                    )
-                    drawOverlayView.drawOverlay(segmentDataNew, MeasureDirection.SIDE, MeasuredBodyPart.SHOULDER)?.let { measureShoulderBitmap ->
-                        measure(measureShoulderBitmap, MeasuredBodyPart.SHOULDER, MeasureDirection.SIDE)
+                    override fun onFinish() {
+                        instructions.text = "now turn sideways"
                     }
-                }
-                maskImageLiveData.value?.let { segmentData ->
-                    val segmentDataNew = segmentData.copy(
-                            hipLine = Pair(
-                                    PointF(segmentData.hipLine?.first?.x!!, lastMeasuredLeftHipY!!),
-                                    PointF(segmentData.hipLine.second.x, lastMeasuredLeftHipY!!))
-                    )
-                    drawOverlayView.drawOverlay(segmentDataNew, MeasureDirection.SIDE, MeasuredBodyPart.HIP)?.let { measureHipBitmap ->
-                        measure(measureHipBitmap, MeasuredBodyPart.HIP, MeasureDirection.SIDE)
+
+                }.start()
+
+                Handler().postDelayed({
+                    maskImageLiveData.value?.let { segmentData ->
+                        drawOverlayView.drawOverlay(segmentData, MeasureDirection.FRONT, MeasuredBodyPart.SHOULDER)?.let { measureShoulderBitmap ->
+                            measure(measureShoulderBitmap, MeasuredBodyPart.SHOULDER, MeasureDirection.FRONT)
+                            lastMeasuredLeftShoulderY = segmentData.shoulderLine?.second?.y
+                        }
                     }
-                }
-            }, 20000)
+                    maskImageLiveData.value?.let { segmentData ->
+                        drawOverlayView.drawOverlay(segmentData, MeasureDirection.FRONT, MeasuredBodyPart.HIP)?.let { measureHipBitmap ->
+                            measure(measureHipBitmap, MeasuredBodyPart.HIP, MeasureDirection.FRONT)
+                            lastMeasuredLeftHipY = segmentData.hipLine?.second?.y
+                        }
+                    }
+                    drawOverlayView.measureDirection = MeasureDirection.SIDE
 
-            Handler().postDelayed({
-                lastMeasuredLeftHipY = null
-                lastMeasuredLeftShoulderY = null
-            }, 25000)
+                    countdown_timer.text = "10"
+                    object : CountDownTimer(10000, 1000) {
+                        override fun onTick(millisUntilFinished: Long) {
+                            countdown_timer.text = countdown_timer.text.toString().toInt().dec().toString()
+                        }
 
+                        override fun onFinish() {
+                            instructions.text = "to measure touch circle button"
+                        }
+
+                    }.start()
+
+                }, 10000)
+
+                Handler().postDelayed({
+                    maskImageLiveData.value?.let { segmentData ->
+                        val segmentDataNew = segmentData.copy(
+                                shoulderLine = Pair(
+                                        PointF(segmentData.shoulderLine?.first?.x!!, lastMeasuredLeftShoulderY!!),
+                                        PointF(segmentData.shoulderLine.second.x, lastMeasuredLeftShoulderY!!))
+                        )
+                        drawOverlayView.drawOverlay(segmentDataNew, MeasureDirection.SIDE, MeasuredBodyPart.SHOULDER)?.let { measureShoulderBitmap ->
+                            measure(measureShoulderBitmap, MeasuredBodyPart.SHOULDER, MeasureDirection.SIDE)
+                        }
+                    }
+                    maskImageLiveData.value?.let { segmentData ->
+                        val segmentDataNew = segmentData.copy(
+                                hipLine = Pair(
+                                        PointF(segmentData.hipLine?.first?.x!!, lastMeasuredLeftHipY!!),
+                                        PointF(segmentData.hipLine.second.x, lastMeasuredLeftHipY!!))
+                        )
+                        drawOverlayView.drawOverlay(segmentDataNew, MeasureDirection.SIDE, MeasuredBodyPart.HIP)?.let { measureHipBitmap ->
+                            measure(measureHipBitmap, MeasuredBodyPart.HIP, MeasureDirection.SIDE)
+                        }
+                    }
+                    lastMeasuredLeftHipY = null
+                    lastMeasuredLeftShoulderY = null
+                }, 20000)
+            } else {
+                Toast.makeText(this, "Please enter your height before measure", Toast.LENGTH_SHORT).show()
+            }
         }
 
         drawOverlayView = findViewById(R.id.draw_overlay)
@@ -572,7 +600,7 @@ class CameraActivity : AppCompatActivity() {
                 }
             }
 
-            val heightRatio = 179f / (bottomHeight - topHeight).toFloat()
+            val heightRatio = edit_height.text.toString().toFloat() / (bottomHeight - topHeight).toFloat()
             Log.d("ahoj", "heightRatio=$heightRatio, bottomHeight=$bottomHeight, topHeight=$topHeight")
             Log.d("ahoj", "height in px = $topHeight - $bottomHeight")
             when (measureDirection) {
