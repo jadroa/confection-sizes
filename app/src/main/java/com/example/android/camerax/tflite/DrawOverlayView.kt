@@ -6,7 +6,9 @@ import android.util.AttributeSet
 import androidx.appcompat.widget.AppCompatImageView
 
 data class SegmentData(
-    val bitmap: Bitmap,
+    val maskBitmap: Bitmap,
+    val edgeBitmap: Bitmap?,
+    val edgeRect: Rect?,
     val shoulderLine: Pair<PointF, PointF>? = null,
     val hipLine: Pair<PointF, PointF>? = null
 )
@@ -40,10 +42,20 @@ class DrawOverlayView(context: Context, attrs: AttributeSet) : AppCompatImageVie
 
         val paint = Paint()
         paint.color = Color.GREEN
-        drawMaskBitmap(segmentData.bitmap, overlayCanvas, paint)
+        drawMaskBitmap(segmentData.maskBitmap, overlayCanvas, paint)
         paint.strokeWidth = 8.0f
         paint.color = Color.RED
         paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
+
+        segmentData.edgeBitmap?.let { bitmap ->
+            segmentData.edgeRect?.let { rect ->
+                overlayCanvas.drawBitmap(
+                        bitmap,
+                        Rect(0, 0, bitmap.width, bitmap.height),
+                        Rect(0, 0, width, height),
+                        paint)
+            }
+        }
 
         return when (measuredBodyPart) {
             MeasuredBodyPart.SHOULDER -> {
@@ -64,7 +76,7 @@ class DrawOverlayView(context: Context, attrs: AttributeSet) : AppCompatImageVie
                     drawLine(overlayBitmap, overlayCanvas, paint, line, measureDirection)
                 }
                 overlayBitmap
-                removeMask(overlayBitmap)
+//                removeMask(overlayBitmap)
             }
         }
     }

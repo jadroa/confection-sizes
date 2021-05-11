@@ -45,6 +45,13 @@ import com.android.example.camerax.tflite.R
 import com.example.android.camera.utils.YuvToRgbConverter
 import com.example.android.camerax.tflite.imagesegmentation.ImageSegmentationModelExecutor
 import kotlinx.android.synthetic.main.activity_camera.*
+import org.opencv.android.BaseLoaderCallback
+import org.opencv.android.LoaderCallbackInterface
+import org.opencv.android.OpenCVLoader
+import org.opencv.android.Utils
+import org.opencv.core.*
+import org.opencv.core.Rect
+import org.opencv.imgproc.Imgproc
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.examples.posenet.lib.BodyPart
@@ -60,6 +67,7 @@ import org.tensorflow.lite.support.image.ops.Rot90Op
 import java.util.concurrent.Executors
 import kotlin.math.*
 import kotlin.random.Random
+
 
 const val MODEL_WIDTH = 257
 const val MODEL_HEIGHT = 257
@@ -110,7 +118,7 @@ class CameraActivity : AppCompatActivity() {
         ImageProcessor.Builder()
             .add(ResizeWithCropOrPadOp(cropSize, cropSize))
             .add(ResizeOp(
-                tfInputSize.height, tfInputSize.width, ResizeOp.ResizeMethod.NEAREST_NEIGHBOR))
+                    tfInputSize.height, tfInputSize.width, ResizeOp.ResizeMethod.NEAREST_NEIGHBOR))
             .add(Rot90Op(-imageRotationDegrees / 90))
             .add(NormalizeOp(0f, 1f))
             .build()
@@ -118,14 +126,14 @@ class CameraActivity : AppCompatActivity() {
 
     private val tflite by lazy {
         Interpreter(
-            FileUtil.loadMappedFile(this, MODEL_PATH),
-            Interpreter.Options().addDelegate(NnApiDelegate()))
+                FileUtil.loadMappedFile(this, MODEL_PATH),
+                Interpreter.Options().addDelegate(NnApiDelegate()))
     }
 
     private val detector by lazy {
         ObjectDetectionHelper(
-            tflite,
-            FileUtil.loadLabels(this, LABELS_PATH)
+                tflite,
+                FileUtil.loadLabels(this, LABELS_PATH)
         )
     }
 
@@ -278,17 +286,17 @@ class CameraActivity : AppCompatActivity() {
             val cameraProvider = cameraProviderFuture.get()
 
             // Set up the view finder use case to display camera preview
-             val preview = Preview.Builder()
+            val preview = Preview.Builder()
                     .setTargetResolution(Size(480, 640))
-                .setTargetRotation(view_finder.display.rotation)
-                .build()
+                    .setTargetRotation(view_finder.display.rotation)
+                    .build()
 
             // Set up the image analysis use case which will process frames in real time
             val imageAnalysis = ImageAnalysis.Builder()
-                .setTargetAspectRatio(AspectRatio.RATIO_4_3)
-                .setTargetRotation(view_finder.display.rotation)
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
+                    .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+                    .setTargetRotation(view_finder.display.rotation)
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .build()
 
             var frameCounter = 0
             var lastFpsTimestamp = System.currentTimeMillis()
@@ -300,7 +308,7 @@ class CameraActivity : AppCompatActivity() {
                     // the analyzer has started running
                     imageRotationDegrees = image.imageInfo.rotationDegrees
                     bitmapBuffer = Bitmap.createBitmap(
-                        image.width, image.height, Bitmap.Config.ARGB_8888)
+                            image.width, image.height, Bitmap.Config.ARGB_8888)
                 }
 
                 // Early exit: image analysis is in paused state
@@ -313,11 +321,14 @@ class CameraActivity : AppCompatActivity() {
                 image.use { converter.yuvToRgb(image.image!!, bitmapBuffer) }
 
                 // Process the image in Tensorflow
-//                val tfImage =  tfImageProcessor.process(tfImageBuffer.apply { load(bitmapBuffer) })
-//
-//                // Perform the object detection for the current frame
-//                val predictions = detector.predict(tfImage)
-//
+                val tfImage = tfImageProcessor.process(tfImageBuffer.apply { load(bitmapBuffer) })
+
+                // Perform the object detection for the current frame
+                val predictions = detector.predict(tfImage)
+
+                val prediction = predictions.maxBy { it.score }
+
+
 //                // Report only the top prediction
 //                reportPrediction(predictions.maxBy { it.score })
 //
@@ -357,7 +368,7 @@ class CameraActivity : AppCompatActivity() {
                 val result = imageSegmentationModel?.execute(bitmapWithBgrnd)
                 val maskBitmap = result?.bitmapMaskOnly
 
-                for(line in bodyJoints) {
+                for (line in bodyJoints) {
                     if (
                             (person.keyPoints[line.first.ordinal].score > minConfidence) and
                             (person.keyPoints[line.second.ordinal].score > minConfidence)
@@ -378,13 +389,30 @@ class CameraActivity : AppCompatActivity() {
                                 prolongedHip = prolongLinePoints(Pair(PointF(firstX, firstY), PointF(secondX, secondY)))
                             }
                         }
-                        if (prolongedShoulder != null && prolongedHip != null) {
-                            maskBitmap?.let {
-                                val segmentData = SegmentData(it, prolongedShoulder, prolongedHip)
-                                val scaledSegmentData = scaleSegmentData(segmentData)
-                                maskImageLiveData.postValue(scaledSegmentData)
-                                prolongedShoulder = null
-                                prolongedHip = null
+                        if (prolongedShoulder != null /*&& prolongedHip != null*/) {
+                            if (isOpenCVInitialized) {
+                                maskBitmap?.let { mask ->
+
+                                    prediction?.let {
+                                        val location = mapOutputCoordinatesByBitmap(it.location, rotatedBitmap)
+                                        val x = if (location.left < 0) 0 else location.left.toInt()
+                                        val y = if (location.top < 0) 0 else location.top.toInt()
+                                        val width = (location.right - location.left).toInt()
+                                        val height = (location.bottom - location.top).toInt()
+                                        val rect = Rect(
+                                                x,
+                                                y,
+                                                if ((x + width) > 480) 480 - x else width,
+                                                if ((y + height) > 640) 640 - y else height)
+                                        val edgeBitmap = detectEdges(rotatedBitmap, rect, mask)
+
+                                        val segmentData = SegmentData(mask, edgeBitmap, android.graphics.Rect(rect.x, rect.y, rect.width, rect.height), prolongedShoulder, prolongedHip)
+                                        val scaledSegmentData = scaleSegmentData(segmentData)
+                                        maskImageLiveData.postValue(scaledSegmentData)
+                                        prolongedShoulder = null
+                                        prolongedHip = null
+                                    }
+                                }
                             }
                         }
                     }
@@ -397,7 +425,7 @@ class CameraActivity : AppCompatActivity() {
             // Apply declared configs to CameraX using the same lifecycle owner
             cameraProvider.unbindAll()
             val camera = cameraProvider.bindToLifecycle(
-                this as LifecycleOwner, cameraSelector, preview, imageAnalysis)
+                    this as LifecycleOwner, cameraSelector, preview, imageAnalysis)
 
             // Use the camera object to link our preview use case with the view
             preview.setSurfaceProvider(view_finder.surfaceProvider)
@@ -407,16 +435,24 @@ class CameraActivity : AppCompatActivity() {
 
     private fun scaleSegmentData(segment: SegmentData): SegmentData {
         val croppedWidth = (257f * (480f / 640f)).toInt()
-        val croppedBitmap = Bitmap.createBitmap(segment.bitmap, (segment.bitmap.width / 2) - (croppedWidth / 2), 0, (257f * (480f / 640f)).toInt(), 257)
-        val scaledShoulderLine = Pair(
-                PointF(segment.shoulderLine!!.first.x * (640f / 480f), segment.shoulderLine.first.y * (640f / 480f)),
-                PointF(segment.shoulderLine.second.x * (640f / 480f), segment.shoulderLine.second.y * (640f / 480f))
-        )
-        val scaledHipLine = Pair(
-                PointF(segment.hipLine!!.first.x * (640f / 480f), segment.hipLine.first.y * (640f / 480f)),
-                PointF(segment.hipLine.second.x * (640f / 480f), segment.hipLine.second.y * (640f / 480f))
-        )
-        return SegmentData(croppedBitmap, scaledShoulderLine, scaledHipLine)
+        val maskBitmapCropped = Bitmap.createBitmap(segment.maskBitmap, (segment.maskBitmap.width / 2) - (croppedWidth / 2), 0, (257f * (480f / 640f)).toInt(), 257)
+        val edgeBitmapCropped = segment.edgeBitmap?.let { Bitmap.createBitmap(it, (segment.maskBitmap.width / 2) - (croppedWidth / 2), 0, (257f * (480f / 640f)).toInt(), 257) }
+        var scaledShoulderLine: Pair<PointF, PointF>? = null
+        segment.shoulderLine?.let {
+            scaledShoulderLine = Pair(
+                    PointF(it.first.x * (640f / 480f), it.first.y * (640f / 480f)),
+                    PointF(it.second.x * (640f / 480f), it.second.y * (640f / 480f))
+            )
+        }
+        var scaledHipLine: Pair<PointF, PointF>? = null
+        segment.hipLine?.let {
+            scaledHipLine = Pair(
+                    PointF(it.first.x * (640f / 480f), it.first.y * (640f / 480f)),
+                    PointF(it.second.x * (640f / 480f), it.second.y * (640f / 480f))
+            )
+        }
+
+        return SegmentData(maskBitmapCropped, edgeBitmapCropped, segment.edgeRect, scaledShoulderLine, scaledHipLine)
     }
 
     private fun prolongLinePoints(posePoints: Pair<PointF, PointF>): Pair<PointF, PointF> {
@@ -440,7 +476,7 @@ class CameraActivity : AppCompatActivity() {
     }
 
     private fun reportPrediction(
-        prediction: ObjectDetectionHelper.ObjectPrediction?
+            prediction: ObjectDetectionHelper.ObjectPrediction?
     ) = view_finder.post {
 
         // Early exit: if prediction is not good enough, don't report it
@@ -475,44 +511,55 @@ class CameraActivity : AppCompatActivity() {
 
         // Step 1: map location to the preview coordinates
         val previewLocation = RectF(
-            location.left * view_finder.width,
-            location.top * view_finder.height,
-            location.right * view_finder.width,
-            location.bottom * view_finder.height
+                location.left * view_finder.width,
+                location.top * view_finder.height,
+                location.right * view_finder.width,
+                location.bottom * view_finder.height
         )
 
-        // Step 2: compensate for camera sensor orientation and mirroring
-        val isFrontFacing = lensFacing == CameraSelector.LENS_FACING_FRONT
-        val correctedLocation = if (isFrontFacing) {
-            RectF(
-                view_finder.width - previewLocation.right,
-                previewLocation.top,
-                view_finder.width - previewLocation.left,
-                previewLocation.bottom)
-        } else {
-            previewLocation
-        }
+        return previewLocation
 
-        // Step 3: compensate for 1:1 to 4:3 aspect ratio conversion + small margin
-        val margin = 0.1f
-        val requestedRatio = 4f / 3f
-        val midX = (correctedLocation.left + correctedLocation.right) / 2f
-        val midY = (correctedLocation.top + correctedLocation.bottom) / 2f
-        return if (view_finder.width < view_finder.height) {
-            RectF(
-                midX - (1f + margin) * requestedRatio * correctedLocation.width() / 2f,
-                midY - (1f - margin) * correctedLocation.height() / 2f,
-                midX + (1f + margin) * requestedRatio * correctedLocation.width() / 2f,
-                midY + (1f - margin) * correctedLocation.height() / 2f
-            )
-        } else {
-            RectF(
-                midX - (1f - margin) * correctedLocation.width() / 2f,
-                midY - (1f + margin) * requestedRatio * correctedLocation.height() / 2f,
-                midX + (1f - margin) * correctedLocation.width() / 2f,
-                midY + (1f + margin) * requestedRatio * correctedLocation.height() / 2f
-            )
-        }
+//        // Step 2: compensate for camera sensor orientation and mirroring
+//        val isFrontFacing = lensFacing == CameraSelector.LENS_FACING_FRONT
+//        val correctedLocation = if (isFrontFacing) {
+//            RectF(
+//                    view_finder.width - previewLocation.right,
+//                    previewLocation.top,
+//                    view_finder.width - previewLocation.left,
+//                    previewLocation.bottom)
+//        } else {
+//            previewLocation
+//        }
+//
+//        // Step 3: compensate for 1:1 to 4:3 aspect ratio conversion + small margin
+//        val margin = 0.1f
+//        val requestedRatio = 4f / 3f
+//        val midX = (correctedLocation.left + correctedLocation.right) / 2f
+//        val midY = (correctedLocation.top + correctedLocation.bottom) / 2f
+//        return if (view_finder.width < view_finder.height) {
+//            RectF(
+//                    midX - (1f + margin) * requestedRatio * correctedLocation.width() / 2f,
+//                    midY - (1f - margin) * correctedLocation.height() / 2f,
+//                    midX + (1f + margin) * requestedRatio * correctedLocation.width() / 2f,
+//                    midY + (1f - margin) * correctedLocation.height() / 2f
+//            )
+//        } else {
+//            RectF(
+//                    midX - (1f - margin) * correctedLocation.width() / 2f,
+//                    midY - (1f + margin) * requestedRatio * correctedLocation.height() / 2f,
+//                    midX + (1f - margin) * correctedLocation.width() / 2f,
+//                    midY + (1f + margin) * requestedRatio * correctedLocation.height() / 2f
+//            )
+//        }
+    }
+
+    private fun mapOutputCoordinatesByBitmap(location: RectF, bitmap: Bitmap): RectF {
+        return RectF(
+                location.left * bitmap.width,
+                location.top * bitmap.height,
+                location.right * bitmap.width,
+                location.bottom * bitmap.height
+        )
     }
 
     override fun onResume() {
@@ -521,16 +568,24 @@ class CameraActivity : AppCompatActivity() {
         // Request permissions each time the app resumes, since they can be revoked at any time
         if (!hasPermissions(this)) {
             ActivityCompat.requestPermissions(
-                this, permissions.toTypedArray(), permissionsRequestCode)
+                    this, permissions.toTypedArray(), permissionsRequestCode)
         } else {
             bindCameraUseCases()
+        }
+
+        if (!OpenCVLoader.initDebug()) {
+            Log.d("OpenCV", "Internal OpenCV library not found. Using OpenCV Manager for initialization")
+            OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_3_0_0, this, mLoaderCallback)
+        } else {
+            Log.d("OpenCV", "OpenCV library found inside package. Using it!")
+            mLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS)
         }
     }
 
     override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
+            requestCode: Int,
+            permissions: Array<out String>,
+            grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == permissionsRequestCode && hasPermissions(this)) {
@@ -643,6 +698,67 @@ class CameraActivity : AppCompatActivity() {
                         measureHipFront = null
                         measureHipSide = null
                     }
+                }
+            }
+        }
+    }
+
+    private fun detectEdges(bitmap: Bitmap, roi: Rect, mlMask: Bitmap): Bitmap {
+        val rgba = Mat()
+        Log.d("ahoj", "roi=${roi.x}, ${roi.y}, ${roi.width}, ${roi.height}")
+        Utils.bitmapToMat(bitmap, rgba)
+        Log.d("ahoj", "rgba.rows = ${rgba.rows()}, rgba.cols = ${rgba.cols()}")
+        val cropRgba = Mat(rgba, roi)
+        val mask = Mat(cropRgba.size(), CvType.CV_8UC1)
+        Imgproc.cvtColor(cropRgba, mask, Imgproc.COLOR_RGB2GRAY, 1)
+        Imgproc.Canny(mask, mask, 250.0, 255.0)
+
+        val contours = ArrayList<MatOfPoint>()
+        val hierarchy = Mat()
+        val contMask = Mat()
+        mask.convertTo(contMask, CvType.CV_32SC1)
+        Imgproc.findContours(contMask, contours, hierarchy, Imgproc.RETR_FLOODFILL, Imgproc.CHAIN_APPROX_SIMPLE)
+        val source = Mat(contMask.size(), contMask.type())
+        Imgproc.drawContours(source, contours, -1, Scalar(0.0, 0.0, 255.0), -1)
+        source.convertTo(mask, CvType.CV_8UC1)
+
+        val edgesDst = Mat(mask.size(), CvType.CV_8UC3)
+
+        val channels = ArrayList<Mat>(3)
+        val zeroMat = Mat(mask.size(), CvType.CV_8UC1)
+        zeroMat.setTo(Scalar(0.0))
+        channels.add(mask)
+        channels.add(zeroMat)
+        channels.add(zeroMat)
+        channels.add(mask)
+        Core.merge(channels, edgesDst)
+
+        channels.clear()
+        Imgproc.cvtColor(rgba, rgba, Imgproc.COLOR_RGBA2RGB)
+        val fullMat = Mat(rgba.size(), CvType.CV_8UC1)
+        fullMat.setTo(Scalar(0.0))
+        Core.split(rgba, channels)
+        channels.add(fullMat)
+        Core.merge(channels, rgba)
+
+        edgesDst.copyTo(rgba.submat(roi))
+
+        val resultBitmap = Bitmap.createBitmap(rgba.cols(), rgba.rows(), Bitmap.Config.ARGB_8888)
+        Utils.matToBitmap(rgba, resultBitmap)
+        return resultBitmap
+    }
+
+    private var isOpenCVInitialized = false
+
+    private val mLoaderCallback: BaseLoaderCallback = object : BaseLoaderCallback(this) {
+        override fun onManagerConnected(status: Int) {
+            when (status) {
+                SUCCESS -> {
+                    Log.i("OpenCV", "OpenCV loaded successfully")
+                    isOpenCVInitialized = true
+                }
+                else -> {
+                    super.onManagerConnected(status)
                 }
             }
         }
