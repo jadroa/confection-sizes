@@ -42,20 +42,10 @@ class DrawOverlayView(context: Context, attrs: AttributeSet) : AppCompatImageVie
 
         val paint = Paint()
         paint.color = Color.GREEN
-        drawMaskBitmap(segmentData.maskBitmap, overlayCanvas, paint)
+        drawMaskBitmap(segmentData.edgeBitmap!!, overlayCanvas, paint)
         paint.strokeWidth = 8.0f
         paint.color = Color.RED
         paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
-
-        segmentData.edgeBitmap?.let { bitmap ->
-            segmentData.edgeRect?.let { rect ->
-                overlayCanvas.drawBitmap(
-                        bitmap,
-                        Rect(0, 0, bitmap.width, bitmap.height),
-                        Rect(0, 0, width, height),
-                        paint)
-            }
-        }
 
         return when (measuredBodyPart) {
             MeasuredBodyPart.SHOULDER -> {

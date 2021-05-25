@@ -50,6 +50,7 @@ import org.opencv.android.LoaderCallbackInterface
 import org.opencv.android.OpenCVLoader
 import org.opencv.android.Utils
 import org.opencv.core.*
+import org.opencv.core.Point
 import org.opencv.core.Rect
 import org.opencv.imgproc.Imgproc
 import org.tensorflow.lite.DataType
@@ -436,7 +437,7 @@ class CameraActivity : AppCompatActivity() {
     private fun scaleSegmentData(segment: SegmentData): SegmentData {
         val croppedWidth = (257f * (480f / 640f)).toInt()
         val maskBitmapCropped = Bitmap.createBitmap(segment.maskBitmap, (segment.maskBitmap.width / 2) - (croppedWidth / 2), 0, (257f * (480f / 640f)).toInt(), 257)
-        val edgeBitmapCropped = segment.edgeBitmap?.let { Bitmap.createBitmap(it, (segment.maskBitmap.width / 2) - (croppedWidth / 2), 0, (257f * (480f / 640f)).toInt(), 257) }
+        val edgeBitmapCropped = segment.edgeBitmap
         var scaledShoulderLine: Pair<PointF, PointF>? = null
         segment.shoulderLine?.let {
             scaledShoulderLine = Pair(
@@ -703,6 +704,55 @@ class CameraActivity : AppCompatActivity() {
         }
     }
 
+//    private fun detectEdges(bitmap: Bitmap, roi: Rect, mlMask: Bitmap): Bitmap {
+//        val rgba = Mat()
+//        Log.d("ahoj", "roi=${roi.x}, ${roi.y}, ${roi.width}, ${roi.height}")
+//        Utils.bitmapToMat(bitmap, rgba)
+//        Log.d("ahoj", "rgba.rows = ${rgba.rows()}, rgba.cols = ${rgba.cols()}")
+//        val cropRgba = Mat(rgba, roi)
+//        val mask = Mat(cropRgba.size(), CvType.CV_8UC1)
+//        Imgproc.cvtColor(cropRgba, mask, Imgproc.COLOR_RGB2GRAY, 1)
+//        Imgproc.Canny(mask, mask, 10.0, 255.0)
+//
+//        val firstMask = Mat(cropRgba.size(), CvType.CV_8UC1)
+//        val bgModel = Mat()
+//        val fgModel = Mat()
+//        val source = Mat(1, 1, CvType.CV_8U, Scalar(Imgproc.GC_PR_FGD.toDouble()))
+//        Imgproc.cvtColor(cropRgba, cropRgba, Imgproc.COLOR_RGBA2RGB)
+//        Imgproc.grabCut(cropRgba, firstMask, roi, bgModel, fgModel, 1, Imgproc.GC_INIT_WITH_RECT)
+//        Core.compare(firstMask, source, firstMask, Core.CMP_EQ)
+////        val dstMask = Mat(cropRgba.size(), CvType.CV_8UC1)
+////        Core.bitwise_or(mask, firstMask.submat(roi), dstMask)
+////        val grabCutMaskBmp = Bitmap.createBitmap(dstMask.cols(), dstMask.rows(), Bitmap.Config.ARGB_8888)
+////        Utils.matToBitmap(dstMask, grabCutMaskBmp)
+//
+//
+//        val edgesDst = Mat(firstMask.size(), CvType.CV_8UC3)
+//
+//        val channels = ArrayList<Mat>(3)
+//        val zeroMat = Mat(firstMask.size(), CvType.CV_8UC1)
+//        zeroMat.setTo(Scalar(0.0))
+//        channels.add(firstMask)
+//        channels.add(zeroMat)
+//        channels.add(zeroMat)
+//        channels.add(firstMask)
+//        Core.merge(channels, edgesDst)
+//
+//        channels.clear()
+//        Imgproc.cvtColor(rgba, rgba, Imgproc.COLOR_RGBA2RGB)
+//        val fullMat = Mat(rgba.size(), CvType.CV_8UC1)
+//        fullMat.setTo(Scalar(0.0))
+//        Core.split(rgba, channels)
+//        channels.add(fullMat)
+//        Core.merge(channels, rgba)
+//
+//        edgesDst.copyTo(rgba.submat(roi))
+//
+//        val resultBitmap = Bitmap.createBitmap(rgba.cols(), rgba.rows(), Bitmap.Config.ARGB_8888)
+//        Utils.matToBitmap(rgba, resultBitmap)
+//        return resultBitmap
+//    }
+
     private fun detectEdges(bitmap: Bitmap, roi: Rect, mlMask: Bitmap): Bitmap {
         val rgba = Mat()
         Log.d("ahoj", "roi=${roi.x}, ${roi.y}, ${roi.width}, ${roi.height}")
@@ -711,16 +761,15 @@ class CameraActivity : AppCompatActivity() {
         val cropRgba = Mat(rgba, roi)
         val mask = Mat(cropRgba.size(), CvType.CV_8UC1)
         Imgproc.cvtColor(cropRgba, mask, Imgproc.COLOR_RGB2GRAY, 1)
-        Imgproc.Canny(mask, mask, 250.0, 255.0)
+//        Imgproc.threshold(mask, mask, 128.0, 255.0, Imgproc.THRESH_TOZERO_INV)
+        Imgproc.Canny(mask, mask, 127.0, 255.0)
 
-        val contours = ArrayList<MatOfPoint>()
-        val hierarchy = Mat()
-        val contMask = Mat()
-        mask.convertTo(contMask, CvType.CV_32SC1)
-        Imgproc.findContours(contMask, contours, hierarchy, Imgproc.RETR_FLOODFILL, Imgproc.CHAIN_APPROX_SIMPLE)
-        val source = Mat(contMask.size(), contMask.type())
-        Imgproc.drawContours(source, contours, -1, Scalar(0.0, 0.0, 255.0), -1)
-        source.convertTo(mask, CvType.CV_8UC1)
+        val element = Imgproc.getStructuringElement(Imgproc.CV_SHAPE_RECT, org.opencv.core.Size(5.0, 5.0))
+        Imgproc.dilate(mask, mask, element)
+//        Imgproc.erode(mask, mask, element)
+//        Imgproc.morphologyEx(mask, mask, Imgproc.MORPH_OPEN, element)
+//        Imgproc.morphologyEx(mask, mask, Imgproc.MORPH_CLOSE, element)
+//        Imgproc.threshold(mask, mask, 128.0, 255.0, Imgproc.THRESH_BINARY_INV)
 
         val edgesDst = Mat(mask.size(), CvType.CV_8UC3)
 
@@ -747,6 +796,60 @@ class CameraActivity : AppCompatActivity() {
         Utils.matToBitmap(rgba, resultBitmap)
         return resultBitmap
     }
+
+//    private fun detectEdges(bit: Bitmap, roi: Rect, mlMask: Bitmap): Bitmap {
+//        val b: Bitmap = bit.copy(Bitmap.Config.ARGB_8888, true)
+//        val tl = Point()
+//        val br = Point()
+//
+//        val img = Mat()
+//        Utils.bitmapToMat(b, img)
+//        Imgproc.cvtColor(img, img, Imgproc.COLOR_RGBA2RGB)
+//
+//        var background = Mat(img.size(), CvType.CV_8UC3,
+//                Scalar(255.0, 255.0, 255.0))
+//        val firstMask = Mat()
+//        val bgModel = Mat()
+//        val fgModel = Mat()
+//        val mask: Mat
+//        val source = Mat(1, 1, CvType.CV_8U, Scalar(Imgproc.GC_PR_FGD.toDouble()))
+//        val dst = Mat()
+//
+//
+//        Imgproc.grabCut(img, firstMask, roi, bgModel, fgModel, 5, Imgproc.GC_INIT_WITH_RECT)
+//        Core.compare(firstMask, source, firstMask, Core.CMP_EQ)
+//
+//        val foreground = Mat(img.size(), CvType.CV_8UC3, Scalar(255.0, 255.0, 255.0))
+//
+//        img.copyTo(foreground, firstMask)
+//
+//        val color = Scalar(255.0, 0.0, 0.0, 255.0)
+//        Imgproc.rectangle(img, tl, br, color)
+//
+//        val tmp = Mat()
+//        Imgproc.resize(background, tmp, img.size())
+//        background = tmp
+//        mask = Mat(foreground.size(), CvType.CV_8UC1,
+//                Scalar(255.0, 255.0, 255.0))
+//
+//        Imgproc.cvtColor(foreground, mask, Imgproc.COLOR_BGR2GRAY)
+//        Imgproc.threshold(mask, mask, 254.0, 255.0, Imgproc.THRESH_BINARY_INV)
+//        println()
+//        val vals = Mat(1, 1, CvType.CV_8UC3, Scalar(0.0))
+//        background.copyTo(dst)
+//
+//        background.setTo(vals, mask)
+//
+//        Core.add(background, foreground, dst, mask)
+//        val grabCutImage = Bitmap.createBitmap(dst.cols(), dst.rows(), Bitmap.Config.ARGB_8888)
+//        val processedImage = Bitmap.createBitmap(dst.cols(), dst.rows(), Bitmap.Config.RGB_565)
+//        Utils.matToBitmap(dst, grabCutImage)
+//        firstMask.release()
+//        source.release()
+//        bgModel.release()
+//        fgModel.release()
+//        return grabCutImage
+//    }
 
     private var isOpenCVInitialized = false
 
