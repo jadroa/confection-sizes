@@ -308,8 +308,11 @@ class CameraActivity : AppCompatActivity() {
                     // The image rotation and RGB image buffer are initialized only once
                     // the analyzer has started running
                     imageRotationDegrees = image.imageInfo.rotationDegrees
-                    bitmapBuffer = Bitmap.createBitmap(
-                            image.width, image.height, Bitmap.Config.ARGB_8888)
+//                    bitmapBuffer = Bitmap.createBitmap(
+//                            image.width, image.height, Bitmap.Config.ARGB_8888)
+
+                    val tmpBmp = BitmapFactory.decodeResource(resources, R.drawable.ja_v_pracovni)
+                    bitmapBuffer = Bitmap.createScaledBitmap(tmpBmp, 640, 480, true)
                 }
 
                 // Early exit: image analysis is in paused state
@@ -318,8 +321,8 @@ class CameraActivity : AppCompatActivity() {
                     return@Analyzer
                 }
 
-                // Convert the image to RGB and place it in our shared buffer
-                image.use { converter.yuvToRgb(image.image!!, bitmapBuffer) }
+//                // Convert the image to RGB and place it in our shared buffer
+//                image.use { converter.yuvToRgb(image.image!!, bitmapBuffer) }
 
                 // Process the image in Tensorflow
                 val tfImage = tfImageProcessor.process(tfImageBuffer.apply { load(bitmapBuffer) })
@@ -405,9 +408,9 @@ class CameraActivity : AppCompatActivity() {
                                                 y,
                                                 if ((x + width) > 480) 480 - x else width,
                                                 if ((y + height) > 640) 640 - y else height)
-                                        val edgeBitmap = detectEdges(rotatedBitmap, rect, mask)
-
-                                        val segmentData = SegmentData(mask, edgeBitmap, android.graphics.Rect(rect.x, rect.y, rect.width, rect.height), prolongedShoulder, prolongedHip)
+                                        val grabCutBmp = grabCut(rotatedBitmap, rect, mask)
+//                                        val edgeBitmap = detectEdges(grabCutBmp, rect, mask)
+                                        val segmentData = SegmentData(mask, grabCutBmp, android.graphics.Rect(rect.x, rect.y, rect.width, rect.height), prolongedShoulder, prolongedHip)
                                         val scaledSegmentData = scaleSegmentData(segmentData)
                                         maskImageLiveData.postValue(scaledSegmentData)
                                         prolongedShoulder = null
@@ -762,24 +765,45 @@ class CameraActivity : AppCompatActivity() {
         val mask = Mat(cropRgba.size(), CvType.CV_8UC1)
         Imgproc.cvtColor(cropRgba, mask, Imgproc.COLOR_RGB2GRAY, 1)
 //        Imgproc.threshold(mask, mask, 128.0, 255.0, Imgproc.THRESH_TOZERO_INV)
-        Imgproc.Canny(mask, mask, 127.0, 255.0)
+        Imgproc.Canny(mask, mask, 0.0, 255.0)
 
-        val element = Imgproc.getStructuringElement(Imgproc.CV_SHAPE_RECT, org.opencv.core.Size(5.0, 5.0))
-        Imgproc.dilate(mask, mask, element)
+//        val maskBmp = Bitmap.createBitmap(mask.cols(), mask.rows(), Bitmap.Config.ARGB_8888)
+//        Utils.matToBitmap(mask, maskBmp)
+//
+//        return maskBmp
+
+//        val element = Imgproc.getStructuringElement(Imgproc.CV_SHAPE_RECT, org.opencv.core.Size(5.0, 5.0))
+//        Imgproc.dilate(mask, mask, element)
 //        Imgproc.erode(mask, mask, element)
 //        Imgproc.morphologyEx(mask, mask, Imgproc.MORPH_OPEN, element)
 //        Imgproc.morphologyEx(mask, mask, Imgproc.MORPH_CLOSE, element)
 //        Imgproc.threshold(mask, mask, 128.0, 255.0, Imgproc.THRESH_BINARY_INV)
 
-        val edgesDst = Mat(mask.size(), CvType.CV_8UC3)
+        val contours = ArrayList<MatOfPoint>()
+        val hierarchy = Mat()
+        Imgproc.findContours( mask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE, Point(0.0, 0.0) )
+        val drawing = Mat(mask.size(), CvType.CV_8UC1)
+        drawing.setTo(Scalar(0.0))
+        val approxShape = MatOfPoint2f()
+        contours.forEachIndexed { index, matOfPoint ->
+            val contour2f = MatOfPoint2f()
+            matOfPoint.convertTo(contour2f, CvType.CV_32F)
+            Imgproc.approxPolyDP(contour2f, approxShape, Imgproc.arcLength(contour2f, true)*0.04, true)
+            Imgproc.drawContours(drawing, contours, index, Scalar(255.0, 255.0, 255.0), Core.FILLED)
+        }
+
+        val drawingBmp = Bitmap.createBitmap(drawing.cols(), drawing.rows(), Bitmap.Config.ARGB_8888)
+        Utils.matToBitmap(drawing, drawingBmp)
+
+        val edgesDst = Mat(drawing.size(), CvType.CV_8UC3)
 
         val channels = ArrayList<Mat>(3)
-        val zeroMat = Mat(mask.size(), CvType.CV_8UC1)
+        val zeroMat = Mat(drawing.size(), CvType.CV_8UC1)
         zeroMat.setTo(Scalar(0.0))
-        channels.add(mask)
+        channels.add(drawing)
         channels.add(zeroMat)
         channels.add(zeroMat)
-        channels.add(mask)
+        channels.add(drawing)
         Core.merge(channels, edgesDst)
 
         channels.clear()
@@ -797,59 +821,65 @@ class CameraActivity : AppCompatActivity() {
         return resultBitmap
     }
 
-//    private fun detectEdges(bit: Bitmap, roi: Rect, mlMask: Bitmap): Bitmap {
-//        val b: Bitmap = bit.copy(Bitmap.Config.ARGB_8888, true)
-//        val tl = Point()
-//        val br = Point()
-//
-//        val img = Mat()
-//        Utils.bitmapToMat(b, img)
-//        Imgproc.cvtColor(img, img, Imgproc.COLOR_RGBA2RGB)
-//
-//        var background = Mat(img.size(), CvType.CV_8UC3,
-//                Scalar(255.0, 255.0, 255.0))
-//        val firstMask = Mat()
-//        val bgModel = Mat()
-//        val fgModel = Mat()
-//        val mask: Mat
-//        val source = Mat(1, 1, CvType.CV_8U, Scalar(Imgproc.GC_PR_FGD.toDouble()))
-//        val dst = Mat()
-//
-//
-//        Imgproc.grabCut(img, firstMask, roi, bgModel, fgModel, 5, Imgproc.GC_INIT_WITH_RECT)
-//        Core.compare(firstMask, source, firstMask, Core.CMP_EQ)
-//
-//        val foreground = Mat(img.size(), CvType.CV_8UC3, Scalar(255.0, 255.0, 255.0))
-//
-//        img.copyTo(foreground, firstMask)
-//
-//        val color = Scalar(255.0, 0.0, 0.0, 255.0)
-//        Imgproc.rectangle(img, tl, br, color)
-//
-//        val tmp = Mat()
-//        Imgproc.resize(background, tmp, img.size())
-//        background = tmp
-//        mask = Mat(foreground.size(), CvType.CV_8UC1,
-//                Scalar(255.0, 255.0, 255.0))
-//
-//        Imgproc.cvtColor(foreground, mask, Imgproc.COLOR_BGR2GRAY)
-//        Imgproc.threshold(mask, mask, 254.0, 255.0, Imgproc.THRESH_BINARY_INV)
-//        println()
-//        val vals = Mat(1, 1, CvType.CV_8UC3, Scalar(0.0))
-//        background.copyTo(dst)
-//
-//        background.setTo(vals, mask)
-//
-//        Core.add(background, foreground, dst, mask)
-//        val grabCutImage = Bitmap.createBitmap(dst.cols(), dst.rows(), Bitmap.Config.ARGB_8888)
-//        val processedImage = Bitmap.createBitmap(dst.cols(), dst.rows(), Bitmap.Config.RGB_565)
-//        Utils.matToBitmap(dst, grabCutImage)
-//        firstMask.release()
-//        source.release()
-//        bgModel.release()
-//        fgModel.release()
-//        return grabCutImage
-//    }
+    private fun grabCut(bit: Bitmap, roi: Rect, mlMask: Bitmap): Bitmap {
+        val b: Bitmap = bit.copy(Bitmap.Config.ARGB_8888, true)
+        val tl = Point()
+        val br = Point()
+
+        val img = Mat()
+        Utils.bitmapToMat(b, img)
+        Imgproc.cvtColor(img, img, Imgproc.COLOR_RGBA2RGB)
+
+        var background = Mat(img.size(), CvType.CV_8UC3,
+                Scalar(255.0, 255.0, 255.0))
+        val firstMask = Mat()
+        val bgModel = Mat()
+        val fgModel = Mat()
+        val mask: Mat
+        val source = Mat(1, 1, CvType.CV_8U, Scalar(Imgproc.GC_PR_FGD.toDouble()))
+        val dst = Mat()
+
+        var now = System.currentTimeMillis()
+        Imgproc.grabCut(img, firstMask, roi, bgModel, fgModel, 10, Imgproc.GC_INIT_WITH_RECT)
+        Core.compare(firstMask, source, firstMask, Core.CMP_EQ)
+
+        val resultBitmap = Bitmap.createBitmap(firstMask.cols(), firstMask.rows(), Bitmap.Config.ARGB_8888)
+        Utils.matToBitmap(firstMask, resultBitmap)
+
+        Log.d("ahoj", "grabCut time: ${System.currentTimeMillis() - now}")
+        now = System.currentTimeMillis()
+
+        val foreground = Mat(img.size(), CvType.CV_8UC3, Scalar(255.0, 255.0, 255.0))
+
+        img.copyTo(foreground, firstMask)
+
+        val color = Scalar(255.0, 0.0, 0.0, 255.0)
+        Imgproc.rectangle(img, tl, br, color)
+
+        val tmp = Mat()
+        Imgproc.resize(background, tmp, img.size())
+        background = tmp
+        mask = Mat(foreground.size(), CvType.CV_8UC1,
+                Scalar(255.0, 255.0, 255.0))
+
+        Imgproc.cvtColor(foreground, mask, Imgproc.COLOR_BGR2GRAY)
+        Imgproc.threshold(mask, mask, 254.0, 255.0, Imgproc.THRESH_BINARY_INV)
+        println()
+        val vals = Mat(1, 1, CvType.CV_8UC3, Scalar(0.0))
+        background.copyTo(dst)
+
+        background.setTo(vals, mask)
+
+        Core.add(background, foreground, dst, mask)
+        val grabCutImage = Bitmap.createBitmap(dst.cols(), dst.rows(), Bitmap.Config.ARGB_8888)
+        Utils.matToBitmap(dst, grabCutImage)
+        firstMask.release()
+        source.release()
+        bgModel.release()
+        fgModel.release()
+        Log.d("ahoj", "grabCut time2: ${System.currentTimeMillis() - now}")
+        return grabCutImage
+    }
 
     private var isOpenCVInitialized = false
 
