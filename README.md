@@ -1,14 +1,7 @@
-# CameraX + Tensorflow Lite
-This sample implements an Activity that performs real-time object detection on
-the live camera frames. It performs the following operations:
-1. Initializes camera preview and image analysis frame streams using CameraX
-2. Loads a mobilenet quantized model using Tensorflow Lite
-3. Converts each incoming frame to the RGB colorspace and resizes it to 224x224 pixels
-4. Performs inference on the transformed frames and reports the object predicted on the screen
-
-The whole pipeline is able to maintain 30 FPS on a Pixel 3 XL.
-
-## Screenshots
-![demo](screenshots/demo.gif "demo animation")
-![screenshot 1](screenshots/screenshot-1.jpg "screenshot 1")
+Demo for AR confection sizes.
+Basically its changed demo [https://github.com/tensorflow/examples/tree/master/lite/examples/image_segmentation/android] for image segmentation where mask is used for measurement.
+future improvements:
+* use edge detection algorithm to catch body more precisely, used OpenCV grabCut and Canny (this is partially done in main trunk)
+* measure more confection sizes,
+* maybe send data to BE for further use cases???
 "# confection-sizes" 
